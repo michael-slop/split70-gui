@@ -40,12 +40,18 @@ DEFAULT_DEFINITIONS = [
 
 LIGHTING_CHANNEL = 3    # from the definition: content = [id, channel, value]
 
-# VIA channel 2 is id_qmk_rgblight - a second, separate lighting zone. The
-# Split70's firmware implements it, but Epomaker's definition never declares
-# it, so no VIA client offers any control for it. On this board it drives the
-# handful of LEDs at the head of each half's chain (the ones the firmware maps
-# to a bogus 0,0 coordinate), which is why they ignore everything on channel 3
-# and sit there cycling a rainbow. Found by probing the hardware; see README.
+# Channel 2 is the VIA channel number normally used by id_qmk_rgblight, but
+# stock rgblight is off on this board ("rgblight": false in keyboard.json).
+# What answers there is Epomaker's own handler for the "RL" zone - the same
+# one the RL_MOD keycode cycles - driving the few LEDs at the head of each
+# half's chain, the ones the firmware maps to a bogus 0,0 coordinate. Their
+# definition never declares the channel, so no VIA client offers any control
+# for it. Found by probing the hardware; see README.
+#
+# IMPORTANT: this zone does NOT cross the split link. keyboard.json syncs only
+# activity/detected_os/layer_state/indicators/matrix_state/modifiers - no
+# lighting. rgb_matrix crosses by its own split_count mechanism, but this
+# does not, so a write here only affects the half holding the USB cable.
 STRIP_CHANNEL = 2
 
 # QMK's rgblight mode numbers. Which of these a given firmware actually
@@ -728,7 +734,9 @@ class App(tk.Tk):
 
         self.strip_note = ttk.Label(
             box, text="The few LEDs at the top of each half. Not part of the "
-                      "per-key matrix above.", foreground="#777")
+                      "per-key matrix above.\nDoes not cross the split link: "
+                      "this only changes the half holding the USB cable.",
+            foreground="#777", justify="left")
         self.strip_note.grid(row=0, column=0, columnspan=2, sticky="w",
                              pady=(0, 8))
 

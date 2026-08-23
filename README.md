@@ -295,11 +295,14 @@ an LED's x/y, so LEDs pinned to the origin just rotate hue forever no matter
 which effect you pick.
 
 **What actually drives them.** VIA's custom-value protocol has numbered
-channels, and channel 2 is `id_qmk_rgblight` - a second lighting zone,
-separate from the `id_qmk_rgb_matrix` zone on channel 3. The Split70's
-firmware implements channel 2, but Epomaker's definition JSON never declares
-it, so neither VIA nor the Epomaker Hub offers any control for it. Probing
-the device directly found it answering:
+channels. Channel 3 is `id_qmk_rgb_matrix`, which is all Epomaker's
+definition declares. Channel 2 is the number normally used by
+`id_qmk_rgblight` - but stock rgblight is *off* on this board
+(`"rgblight": false` in `keyboard.json`), so what answers on channel 2 is
+Epomaker's own handler for the "RL" zone, the same one the `RL_MOD` keycode
+(`Fn + \`) cycles. Their definition never declares that channel, so neither
+VIA nor the Epomaker Hub offers any control for it. Probing the device
+directly found it answering:
 
     ch2 id2 (effect) = 14      <- an rgblight rainbow-swirl mode
     ch2 id3 (speed)  = 0
@@ -310,8 +313,23 @@ drives that channel - effect, brightness, speed and colour - and its own
 Save button commits it to EEPROM so it survives unplugging.
 
 The box greys itself out on a keyboard without that zone: an unsupported
-custom value reads back as `0xFF`, and every real rgblight mode is far below
+custom value reads back as `0xFF`, and every real mode number is far below
 that, which tells the two apart.
+
+**It only affects one half.** This zone does not cross the split link.
+`keyboard.json` syncs `activity`, `detected_os`, `layer_state`,
+`indicators`, `matrix_state` and `modifiers` - no lighting of any kind.
+`rgb_matrix` gets across by its own `split_count: [36, 41]` mechanism, which
+is why per-key effects work on both halves, but the RL zone has no such
+path: it runs on the master and drives the master's local LEDs only. Each
+half keeps its own copy in its own EEPROM.
+
+So a write here changes the half holding the USB cable. To fix the other
+half, move the cable to it - whichever half has USB is the master, since
+`is_keyboard_master()` reads `HS_BAT_CABLE_PIN` - then set and save again.
+Expect the keymap to read as factory while the other half is master: the
+dynamic keymap also lives in the master's EEPROM. Nothing is lost, and
+moving the cable back restores it.
 
 ## Layers: the Windows/Mac trap
 
