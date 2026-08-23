@@ -296,5 +296,12 @@ firmware answers `0xFE` (Vial's keyboard-id command) with `0xFF`,
 
 ### Licence
 
-The bundled `Epomaker_Split70.json` belongs to Epomaker. The Python is
-original work with no licence declared yet - add one if you publish this.
+MIT - see [LICENSE](LICENSE). That covers the Python and the documentation,
+which are original work.
+
+It does not cover `Epomaker_Split70.json`, which is Epomaker's file,
+redistributed unmodified for convenience.
+
+No code from Epomaker's GPL firmware is included here. It was read as
+reference to identify keycode values and hardware indices, which are facts
+about the hardware rather than copied source.
