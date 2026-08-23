@@ -1232,9 +1232,13 @@ class App(tk.Tk):
             "Apply to the other half",
             "The corner LEDs do not sync across the split link, so each "
             "half has to be written while it holds the USB cable.\n\n"
-            "1.  Unplug the USB cable from this half\n"
-            "2.  Plug it into the other half\n"
-            "3.  Click OK\n\n"
+            "1.  Unplug the USB cable from the computer\n"
+            "2.  Unplug the cable joining the two halves\n"
+            "3.  Plug the computer into the OTHER half, on its own\n"
+            "4.  Click OK\n\n"
+            "Do not leave both cables connected: that ties the host supply "
+            "to the other half's through the link. Connect one half at a "
+            "time.\n\n"
             "The keymap will read as factory while the other half is the "
             "master - that is expected, and nothing is lost.",
         ):
@@ -1267,8 +1271,9 @@ class App(tk.Tk):
         messagebox.showinfo(
             "Done",
             f"Corner LEDs set to '{STRIP_EFFECTS[self.strip_effect.current()][0]}'"
-            " and saved on that half.\n\nMove the cable back whenever you "
-            "like - the app will reconnect on its own.")
+            " and saved on that half.\n\nNow unplug this half, reconnect the "
+            "cable between the two halves, and plug the computer back into "
+            "the original half. The app will reconnect on its own.")
         self.status.set("Other half written. Waiting for the cable...")
         self.update()
         self._wait_for_keyboard(seconds=120)

@@ -330,7 +330,17 @@ USB is the master, since `is_keyboard_master()` reads `HS_BAT_CABLE_PIN`.
 **"Apply these to the other half..."** in the Corner LEDs box automates
 that. Set the effect you want, click it, and it walks you through moving the
 cable, waits for the other half to appear, writes the same settings and
-commits them to that half's EEPROM. Expect the keymap to read as factory
+commits them to that half's EEPROM.
+
+**Connect one half at a time.** Unplug the computer, unplug the cable
+joining the halves, then plug the computer into the other half on its own.
+The link between the halves is a USB-C connector carrying USART serial
+(A9/A10), not USB, so the risk is not data - it is leaving the host's 5V
+tied to the other half's supply through that link while both are plugged
+in. The firmware does manage a charge path (`USB_POWER_EN_PIN`,
+`HS_BAT_CABLE_PIN`, `BAT_FULL_PIN`), but Epomaker publishes nothing saying
+simultaneous connection is safe, so do not do it. One half, one cable.
+That is the same standalone state the half is in for firmware flashing. Expect the keymap to read as factory
 while the other half is master - the dynamic keymap also lives in the
 master's EEPROM. Nothing is lost, and moving the cable back restores it.
 
