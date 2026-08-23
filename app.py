@@ -15,6 +15,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, colorchooser
 
 import keycodes
+import macrolang
 import macros
 import via_hid
 
@@ -173,11 +174,18 @@ class KeycodePicker(tk.Toplevel):
 
 # ----------------------------------------------------------- macro editor
 
-MACRO_HELP = (
+MACRO_HELP_RAW = (
     "Type text to send it literally.   {KC_ENT} taps a key.   "
     "{+KC_LSFT} holds, {-KC_LSFT} releases.\n"
     "{250} waits 250 ms.   {{ is a literal brace.   "
     "Assign a slot to a key with MACRO(0), MACRO(1), ..."
+)
+
+MACRO_HELP_SIMPLE = (
+    "One step per line:   press win+shift+s    tap enter    hold shift    "
+    "release shift\n"
+    "type some text    wait 250    # comment.   A bare chord like ctrl+c "
+    "means press.  Assign with MACRO(0)."
 )
 
 
@@ -195,25 +203,45 @@ class MacroEditor(tk.Toplevel):
         frame = ttk.Frame(self, padding=10)
         frame.pack(fill="both", expand=True)
 
-        ttk.Label(frame, text=MACRO_HELP, justify="left").grid(
-            row=0, column=0, columnspan=2, sticky="w", pady=(0, 10))
+        self.mode = tk.StringVar(value="simple")
+        self.help_text = tk.StringVar(value=MACRO_HELP_SIMPLE)
+
+        modes = ttk.Frame(frame)
+        modes.grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(modes, text="Editing style:").pack(side="left")
+        for label, value in (("Plain English", "simple"), ("Raw", "raw")):
+            ttk.Radiobutton(modes, text=label, value=value,
+                            variable=self.mode,
+                            command=self.on_mode_change).pack(side="left",
+                                                              padx=(8, 0))
+
+        ttk.Label(frame, textvariable=self.help_text, justify="left").grid(
+            row=1, column=0, columnspan=2, sticky="w", pady=(6, 10))
 
         self.listbox = tk.Listbox(frame, width=30, height=16,
                                   activestyle="none", exportselection=False)
-        self.listbox.grid(row=1, column=0, sticky="ns")
+        self.listbox.grid(row=2, column=0, sticky="ns")
         self.listbox.bind("<<ListboxSelect>>", self.on_select)
 
         right = ttk.Frame(frame)
-        right.grid(row=1, column=1, sticky="nsew", padx=(10, 0))
+        right.grid(row=2, column=1, sticky="nsew", padx=(10, 0))
         frame.columnconfigure(1, weight=1)
-        frame.rowconfigure(1, weight=1)
+        frame.rowconfigure(2, weight=1)
 
-        self.editor = tk.Text(right, width=52, height=14, wrap="word",
+        self.editor = tk.Text(right, width=52, height=11, wrap="word",
                               font=("Consolas", 10))
         self.editor.pack(fill="both", expand=True)
+        self.editor.bind("<KeyRelease>", lambda _e: self.update_preview())
+
+        ttk.Label(right, text="What it will do:").pack(anchor="w",
+                                                       pady=(8, 2))
+        self.preview_box = tk.Text(right, width=52, height=6, wrap="word",
+                                   font=("Consolas", 9), state="disabled",
+                                   background="#f4f4f4", relief="flat")
+        self.preview_box.pack(fill="x")
 
         buttons = ttk.Frame(frame)
-        buttons.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        buttons.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(10, 0))
 
         ttk.Button(buttons, text="Write all to keyboard",
                    command=self.write_all).pack(side="right")
@@ -224,7 +252,7 @@ class MacroEditor(tk.Toplevel):
 
         self.status = tk.StringVar()
         ttk.Label(frame, textvariable=self.status).grid(
-            row=3, column=0, columnspan=2, sticky="w", pady=(8, 0))
+            row=4, column=0, columnspan=2, sticky="w", pady=(8, 0))
 
         self.refresh_list()
         self.listbox.selection_set(0)
@@ -249,21 +277,66 @@ class MacroEditor(tk.Toplevel):
         if selection:
             self.listbox.selection_set(selection[0])
 
+    def to_wire(self, text):
+        """Editor contents -> wire syntax, whichever style is showing."""
+        if self.mode.get() == "simple":
+            return macrolang.compile_script(text)
+        return text
+
+    def show_wire(self, wire):
+        """Put wire syntax into the editor in the current style."""
+        self.editor.delete("1.0", tk.END)
+        if self.mode.get() == "simple":
+            wire = macrolang.decompile(wire)
+        self.editor.insert("1.0", wire)
+        self.update_preview()
+
     def load_slot(self, index):
         self.current = index
-        self.editor.delete("1.0", tk.END)
-        self.editor.insert("1.0", macros.decode_macro(self.bodies[index]))
+        self.show_wire(macros.decode_macro(self.bodies[index]))
+
+    def update_preview(self):
+        """Live plain-English description of the macro being edited."""
+        try:
+            wire = self.to_wire(self.editor.get("1.0", "end-1c"))
+            macros.encode_macro(wire)  # surfaces size/keycode problems too
+            lines = macrolang.explain(wire)
+            body = "\n".join(lines) if lines else "(nothing yet)"
+        except (macrolang.ScriptError, macros.MacroError) as exc:
+            body = f"! {exc}"
+        self.preview_box.configure(state="normal")
+        self.preview_box.delete("1.0", tk.END)
+        self.preview_box.insert("1.0", body)
+        self.preview_box.configure(state="disabled")
+
+    def on_mode_change(self):
+        """Convert what is in the editor rather than discarding it."""
+        simple = self.mode.get() == "simple"
+        self.help_text.set(MACRO_HELP_SIMPLE if simple else MACRO_HELP_RAW)
+        text = self.editor.get("1.0", "end-1c")
+        try:
+            # The text is still in the *previous* style, so compile it with
+            # that one before re-rendering in the newly selected style.
+            wire = text if simple else macrolang.compile_script(text)
+        except macrolang.ScriptError as exc:
+            messagebox.showerror("Macro error", str(exc))
+            self.mode.set("simple" if not simple else "raw")
+            self.help_text.set(MACRO_HELP_RAW if simple
+                               else MACRO_HELP_SIMPLE)
+            return
+        self.show_wire(wire)
 
     def stash_current(self):
         """Encode the editor contents back into the in-memory slot."""
-        text = self.editor.get("1.0", "end-1c")
         try:
-            self.bodies[self.current] = macros.encode_macro(text)
-        except macros.MacroError as exc:
+            wire = self.to_wire(self.editor.get("1.0", "end-1c"))
+            self.bodies[self.current] = macros.encode_macro(wire)
+        except (macrolang.ScriptError, macros.MacroError) as exc:
             messagebox.showerror(
                 "Macro error", f"MACRO({self.current}): {exc}"
             )
             return False
+        self.update_preview()
         return True
 
     def update_usage(self):

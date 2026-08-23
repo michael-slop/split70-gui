@@ -98,7 +98,40 @@ Hit **Macros...** in the toolbar. The Split70 has **16 slots sharing 3322
 bytes**. Pick a slot on the left, write the body on the right, then
 *Write all to keyboard*.
 
-Syntax:
+There are two editing styles, and the radio buttons at the top convert
+between them without losing what you have typed. A live pane underneath the
+editor spells out what the macro will actually do, and shows the error
+inline if it does not compile.
+
+### Plain English (the default)
+
+One step per line:
+
+| You write | It does |
+| --- | --- |
+| `press win+shift+s` | holds Win and Shift, taps S, releases both |
+| `press alt+4` | Alt+4 |
+| `ctrl+c` | a bare chord means `press` |
+| `tap enter` | taps one key, no modifiers |
+| `hold shift` / `release shift` | for holds that span several steps |
+| `type some text` | sends the text literally |
+| `wait 250` | pauses 250 ms (`250ms` works too) |
+| `# note` | comment |
+
+Modifier names are forgiving: `ctrl`/`control`, `alt`/`opt`/`option`,
+`win`/`super`/`cmd`/`gui`, `shift`. Keys take their obvious spelling -
+`enter`, `esc`, `pgdn`, `f13`, `.` or `period`. Prefix `r` for the
+right-hand modifier (`ralt`, `rwin`).
+
+A line that is not a recognised statement is treated as `type`, so a plain
+line of text needs no keyword.
+
+This all lives in `macrolang.py`, which only compiles to the raw syntax
+below - the keyboard never sees anything else.
+
+### Raw
+
+The wire syntax that goes into the macro buffer:
 
 | You write | It does |
 | --- | --- |
@@ -110,6 +143,8 @@ Syntax:
 | `{{` | a literal `{` |
 
 So `{+KC_LSFT}hi{-KC_LSFT}{500}!` types `HI`, waits half a second, then `!`.
+The same thing in plain English is `hold shift`, `type hi`, `release shift`,
+`wait 500`, `type !`.
 
 To fire a macro, remap a key to `MACRO(0)`, `MACRO(1)`, and so on - they
 show up in the normal keycode picker.
@@ -130,6 +165,7 @@ refused before anything is sent.
 | `via_hid.py` | Device discovery + the VIA protocol. No GUI code. |
 | `keycodes.py` | Keycode tables and name/number conversion. |
 | `macros.py` | Macro body encoding/decoding. No GUI code. |
+| `macrolang.py` | The plain-English macro language. No GUI code. |
 | `app.py` | The tkinter GUI: layout rendering, picker, lighting, macros. |
 | `Epomaker_Split70.json` | VIA definition - layout, RGB menus, custom keycodes. |
 
@@ -242,6 +278,39 @@ the mode-scan call sits behind `#if defined(...)` on both.
 The 30-second "revert to USB" timeout in `hs_rgb_blink_hook` is a red
 herring. It is only reachable via `lpwr_wakeup_hook`, which fires once per
 wake, so it never repeats often enough to elapse.
+
+## Layers: the Windows/Mac trap
+
+The Split70 has four layers, and they are **two pairs**, not four
+independent ones:
+
+| Layer | What it is |
+| --- | --- |
+| 0 | Windows base |
+| 1 | Windows Fn |
+| 2 | macOS base |
+| 3 | macOS Fn |
+
+Layers 0 and 2 differ by exactly 11 keys - `KC_LGUI`/`KC_LALT` swapped at
+`4,2` and `4,3`, `KC_RALT`/`KC_RGUI` at `9,3`, some punctuation, and the Fn
+key itself, which is `MO(1)` on layer 0 and `MO(3)` on layer 2.
+
+Two keys move you between the pairs:
+
+* **Fn + S** is `TO(2)` on layer 1 - jumps to macOS.
+* **Fn + A** is `TO(0)` on layer 3 - jumps back to Windows.
+
+Note the asymmetry: from Windows, only `Fn+S` does anything; from macOS,
+only `Fn+A` does. A stray `Fn+S` therefore looks exactly like the keyboard
+forgetting everything you configured. It has not - your remaps are still in
+EEPROM on layers 0 and 1, but the board has stopped reading them, and the Fn
+key now opens layer 3, which is nearly empty.
+
+**If your remaps and macros suddenly do nothing and the Fn layer seems dead,
+press Fn+A before you suspect anything else.** Nothing is lost.
+
+The practical consequence: if you actually use both modes, remap **both
+pairs**. Anything you put on layer 0 or 1 is invisible in macOS mode.
 
 ## Matrix notes
 
