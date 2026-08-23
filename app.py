@@ -10,6 +10,7 @@ Run:  python app.py [path-to-definition.json]
 import json
 import os
 import sys
+import time
 import colorsys
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, colorchooser
@@ -772,6 +773,9 @@ class App(tk.Tk):
                    command=self.on_save_strip).grid(row=4, column=1,
                                                     sticky="e", padx=8,
                                                     pady=(10, 0))
+        ttk.Button(box, text="Apply these to the other half...",
+                   command=self.on_apply_other_half).grid(
+                       row=5, column=1, sticky="w", padx=8, pady=(8, 0))
 
     def _canvas_size(self):
         return (int(self.extent_x * KEY_UNIT) + 20,
@@ -1157,6 +1161,90 @@ class App(tk.Tk):
             self.status.set("Corner LEDs saved to keyboard.")
         except via_hid.DeviceError as exc:
             self.status.set(f"Save failed: {exc}")
+
+    def _strip_settings(self):
+        """(mode, brightness, speed) currently shown in the corner LED box."""
+        index = self.strip_effect.current()
+        mode = (STRIP_EFFECTS[index][1]
+                if 0 <= index < len(STRIP_EFFECTS) else 0)
+        return (mode & 0xFF,
+                int(self.strip_brightness.get()) & 0xFF,
+                int(self.strip_speed.get()) & 0xFF)
+
+    def _wait_for_keyboard(self, seconds=90):
+        """Poll for a VIA interface, keeping the UI alive. Path or None."""
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            try:
+                found = via_hid.find_devices()
+            except via_hid.DeviceError:
+                found = []
+            if found:
+                return found[0][2]
+            left = int(deadline - time.monotonic())
+            self.status.set(f"Waiting for the other half... {left}s")
+            self.update()
+            time.sleep(0.4)
+        return None
+
+    def on_apply_other_half(self):
+        """Write the corner LED settings to the half without the cable.
+
+        The zone does not cross the split link - it runs on the master and
+        drives only the master's own LEDs, and each half keeps its own copy
+        in its own EEPROM. So the only way to set the other half is to make
+        it the master, which means physically moving the USB cable to it.
+        This walks the user through that and does the write on reconnect.
+        """
+        if not self.strip_supported:
+            return
+        mode, brightness, speed = self._strip_settings()
+
+        if not messagebox.askokcancel(
+            "Apply to the other half",
+            "The corner LEDs do not sync across the split link, so each "
+            "half has to be written while it holds the USB cable.\n\n"
+            "1.  Unplug the USB cable from this half\n"
+            "2.  Plug it into the other half\n"
+            "3.  Click OK\n\n"
+            "The keymap will read as factory while the other half is the "
+            "master - that is expected, and nothing is lost.",
+        ):
+            return
+
+        if self.device:
+            self.device.close()
+            self.device = None
+
+        target = self._wait_for_keyboard()
+        if not target:
+            messagebox.showerror(
+                "Nothing appeared",
+                "No VIA interface showed up. If that half's port is only "
+                "the inter-half link, it cannot be reached from software.")
+            self.connect()
+            return
+
+        try:
+            with via_hid.ViaDevice(target) as dev:
+                dev.custom_set(STRIP_CHANNEL, 1, [brightness])
+                dev.custom_set(STRIP_CHANNEL, 3, [speed])
+                dev.custom_set(STRIP_CHANNEL, 2, [mode])
+                dev.custom_save(STRIP_CHANNEL)
+        except via_hid.DeviceError as exc:
+            messagebox.showerror("Write failed", str(exc))
+            self.connect()
+            return
+
+        messagebox.showinfo(
+            "Done",
+            f"Corner LEDs set to '{STRIP_EFFECTS[self.strip_effect.current()][0]}'"
+            " and saved on that half.\n\nMove the cable back whenever you "
+            "like - the app will reconnect on its own.")
+        self.status.set("Other half written. Waiting for the cable...")
+        self.update()
+        self._wait_for_keyboard(seconds=120)
+        self.connect()
 
     def destroy(self):
         if self.device:

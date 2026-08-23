@@ -324,12 +324,18 @@ is why per-key effects work on both halves, but the RL zone has no such
 path: it runs on the master and drives the master's local LEDs only. Each
 half keeps its own copy in its own EEPROM.
 
-So a write here changes the half holding the USB cable. To fix the other
-half, move the cable to it - whichever half has USB is the master, since
-`is_keyboard_master()` reads `HS_BAT_CABLE_PIN` - then set and save again.
-Expect the keymap to read as factory while the other half is master: the
-dynamic keymap also lives in the master's EEPROM. Nothing is lost, and
-moving the cable back restores it.
+So a write here changes the half holding the USB cable. Whichever half has
+USB is the master, since `is_keyboard_master()` reads `HS_BAT_CABLE_PIN`.
+
+**"Apply these to the other half..."** in the Corner LEDs box automates
+that. Set the effect you want, click it, and it walks you through moving the
+cable, waits for the other half to appear, writes the same settings and
+commits them to that half's EEPROM. Expect the keymap to read as factory
+while the other half is master - the dynamic keymap also lives in the
+master's EEPROM. Nothing is lost, and moving the cable back restores it.
+
+The `RL_MOD` keycode (`Fn + \`) also drives this zone from the firmware
+side, so it is worth trying first.
 
 ## Layers: the Windows/Mac trap
 
