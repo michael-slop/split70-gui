@@ -4,3 +4,5 @@ keymap-backup.json
 lighting-backup.json
 rgblight-backup.json
 keymap-mine.json
+keymap-before-reset.json
+keymap-factory.json

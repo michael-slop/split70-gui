@@ -496,6 +496,17 @@ class ViaDevice:
             )
             offset += count
 
+    def keymap_reset(self):
+        """Put every layer back to the firmware's built-in keymap.
+
+        This is CMD_DYNAMIC_KEYMAP_RESET (0x06). It rewrites the dynamic
+        keymap in EEPROM from the defaults compiled into the firmware, so
+        every remap is lost. It is NOT the same as CMD_EEPROM_RESET (0x0A),
+        which this module deliberately never sends: that wipes everything,
+        wireless config included.
+        """
+        self.transact([CMD_DYNAMIC_KEYMAP_RESET])
+
     def macro_reset(self):
         """Clear every macro slot."""
         self.transact([CMD_DYNAMIC_KEYMAP_MACRO_RESET])
