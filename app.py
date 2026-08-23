@@ -1116,6 +1116,13 @@ class App(tk.Tk):
 
     # -- corner LEDs (channel 2) -------------------------------------------
 
+    def _strip_mode(self):
+        """The rgblight mode number currently selected, or None."""
+        index = self.strip_effect.current()
+        if 0 <= index < len(STRIP_EFFECTS):
+            return STRIP_EFFECTS[index][1]
+        return None
+
     def on_strip_light(self, value_id, variable):
         if not self.device or self._loading or not self.strip_supported:
             return
@@ -1124,6 +1131,12 @@ class App(tk.Tk):
                                    [int(variable.get()) & 0xFF])
         except via_hid.DeviceError as exc:
             self.status.set(f"Corner LED write failed: {exc}")
+            return
+        # The firmware accepts these but ignores them while the zone is off,
+        # which otherwise looks like the slider is broken.
+        if self._strip_mode() == 0:
+            self.status.set("Corner LEDs are Off - pick an effect before "
+                            "brightness, speed or colour will do anything.")
 
     def on_strip_effect(self, _event=None):
         if not self.device or self._loading or not self.strip_supported:
@@ -1143,6 +1156,21 @@ class App(tk.Tk):
         rgb, _hex = colorchooser.askcolor(title="Corner LED colour")
         if not rgb:
             return
+        # A colour written while the zone is off is discarded by the
+        # firmware, so offer to turn it on rather than silently do nothing.
+        if self._strip_mode() == 0:
+            if not messagebox.askyesno(
+                "Corner LEDs are off",
+                "The corner LEDs are set to Off, and the keyboard ignores a "
+                "colour while they are.\n\nSwitch them to Solid colour and "
+                "apply this colour?",
+            ):
+                return
+            for index, (_name, mode) in enumerate(STRIP_EFFECTS):
+                if mode == 1:
+                    self.strip_effect.current(index)
+                    break
+            self.on_strip_effect()
         r, g, b = (channel / 255.0 for channel in rgb)
         hue, sat, _val = colorsys.rgb_to_hsv(r, g, b)
         try:

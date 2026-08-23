@@ -337,6 +337,27 @@ master's EEPROM. Nothing is lost, and moving the cable back restores it.
 The `RL_MOD` keycode (`Fn + \`) also drives this zone from the firmware
 side, so it is worth trying first.
 
+**Tested: `rgb_matrix` does not reach these LEDs.** They appear in the
+77-entry `rgb_matrix` layout, and `rgb_matrix` does cross the split, so it
+looked like turning the RL overlay off might hand them back to the matrix
+and solve the sync for free. It does not. With the overlay off on both
+halves and the matrix set to Solid Colour, the whole board lit and the
+corner LEDs stayed dark. They are driven by the RL overlay and nothing
+else, which is why the per-half write is unavoidable.
+
+**Colour and brightness are ignored while the zone is Off.** The firmware
+accepts the write and discards it - a colour written in mode 0 reads back as
+0. Pick an effect first. In Solid colour mode the values stick exactly:
+
+    effect Off    wrote hue 85 -> reads 0     (discarded)
+    effect Solid  wrote hue 85 -> reads 85
+                  wrote hue 170 -> reads 170
+
+The app handles this: choosing a colour while the zone is off offers to
+switch it to Solid colour, and the brightness and speed sliders say why
+nothing is happening rather than looking broken. Brightness is quantised by
+the firmware (`val_steps: 16`), so a written value can read back lower.
+
 ## Layers: the Windows/Mac trap
 
 The Split70 has four layers, and they are **two pairs**, not four
