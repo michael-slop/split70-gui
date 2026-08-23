@@ -40,6 +40,28 @@ DEFAULT_DEFINITIONS = [
 
 LIGHTING_CHANNEL = 3    # from the definition: content = [id, channel, value]
 
+# VIA channel 2 is id_qmk_rgblight - a second, separate lighting zone. The
+# Split70's firmware implements it, but Epomaker's definition never declares
+# it, so no VIA client offers any control for it. On this board it drives the
+# handful of LEDs at the head of each half's chain (the ones the firmware maps
+# to a bogus 0,0 coordinate), which is why they ignore everything on channel 3
+# and sit there cycling a rainbow. Found by probing the hardware; see README.
+STRIP_CHANNEL = 2
+
+# QMK's rgblight mode numbers. Which of these a given firmware actually
+# compiled in varies, so writing an unsupported one is simply ignored.
+STRIP_EFFECTS = [
+    ("Off", 0),
+    ("Solid colour", 1),
+    ("Breathing", 2),
+    ("Rainbow mood", 6),
+    ("Rainbow swirl", 9),
+    ("Snake", 15),
+    ("Knight", 21),
+    ("Static gradient", 26),
+    ("Twinkle", 33),
+]
+
 
 # ------------------------------------------------------------------ helpers
 
@@ -589,6 +611,9 @@ class App(tk.Tk):
             (y + h for _r, _c, _x, y, _w, h in self.keys), default=5.0)
         self._last_size = (0, 0)
         self._loading = False
+        # Set before the UI is built: the Scale widgets fire their callbacks
+        # while being constructed, and those callbacks read this.
+        self.strip_supported = False
 
         self._build_ui()
         self.after(120, self.connect)
@@ -691,6 +716,54 @@ class App(tk.Tk):
                    command=self.on_save_lighting).grid(row=3, column=1,
                                                        sticky="e", padx=8,
                                                        pady=(10, 0))
+        self._build_strip()
+
+    def _build_strip(self):
+        """Controls for the undocumented second lighting zone (channel 2)."""
+        box = ttk.LabelFrame(
+            self, text="Corner LEDs  (undocumented zone - VIA channel 2)",
+            padding=10)
+        box.pack(fill="x", padx=10, pady=(0, 10))
+        self.strip_box = box
+
+        self.strip_note = ttk.Label(
+            box, text="The few LEDs at the top of each half. Not part of the "
+                      "per-key matrix above.", foreground="#777")
+        self.strip_note.grid(row=0, column=0, columnspan=2, sticky="w",
+                             pady=(0, 8))
+
+        ttk.Label(box, text="Effect").grid(row=1, column=0, sticky="w")
+        self.strip_effect = ttk.Combobox(
+            box, state="readonly", width=28,
+            values=[name for name, _ in STRIP_EFFECTS])
+        self.strip_effect.grid(row=1, column=1, sticky="w", padx=8)
+        self.strip_effect.bind("<<ComboboxSelected>>", self.on_strip_effect)
+
+        ttk.Label(box, text="Brightness").grid(row=2, column=0, sticky="w",
+                                               pady=(8, 0))
+        self.strip_brightness = tk.IntVar(value=255)
+        ttk.Scale(box, from_=0, to=255, variable=self.strip_brightness,
+                  command=lambda _v: self.on_strip_light(
+                      1, self.strip_brightness),
+                  length=240).grid(row=2, column=1, sticky="w", padx=8,
+                                   pady=(8, 0))
+
+        ttk.Label(box, text="Speed").grid(row=3, column=0, sticky="w",
+                                          pady=(8, 0))
+        self.strip_speed = tk.IntVar(value=0)
+        ttk.Scale(box, from_=0, to=255, variable=self.strip_speed,
+                  command=lambda _v: self.on_strip_light(3, self.strip_speed),
+                  length=240).grid(row=3, column=1, sticky="w", padx=8,
+                                   pady=(8, 0))
+
+        ttk.Button(box, text="Colour...",
+                   command=self.on_strip_colour).grid(row=4, column=1,
+                                                      sticky="w", padx=8,
+                                                      pady=(10, 0))
+        ttk.Button(box, text="Save corner LEDs to keyboard",
+                   command=self.on_save_strip).grid(row=4, column=1,
+                                                    sticky="e", padx=8,
+                                                    pady=(10, 0))
 
     def _canvas_size(self):
         return (int(self.extent_x * KEY_UNIT) + 20,
@@ -814,6 +887,46 @@ class App(tk.Tk):
             pass  # lighting is optional; never block the keymap on it
         finally:
             self._loading = False
+        self.read_strip()
+
+    def read_strip(self):
+        """Populate the channel-2 controls, if this board has that zone."""
+        if not self.device:
+            return
+        self._loading = True
+        try:
+            effect = self.device.custom_get(STRIP_CHANNEL, 2)[0]
+            # An unsupported value reads back as 0xFF; every real rgblight
+            # mode is well under that, so this tells the two apart.
+            self.strip_supported = effect != 0xFF
+            if self.strip_supported:
+                self.strip_brightness.set(
+                    self.device.custom_get(STRIP_CHANNEL, 1)[0])
+                self.strip_speed.set(
+                    self.device.custom_get(STRIP_CHANNEL, 3)[0])
+                for index, (_name, mode) in enumerate(STRIP_EFFECTS):
+                    if mode == effect:
+                        self.strip_effect.current(index)
+                        break
+                else:
+                    self.strip_note.configure(
+                        text=f"Currently on rgblight mode {effect}, which is "
+                             "not in the list below.")
+        except (via_hid.DeviceError, IndexError):
+            self.strip_supported = False
+        finally:
+            self._loading = False
+
+        state = "normal" if self.strip_supported else "disabled"
+        for child in self.strip_box.winfo_children():
+            if isinstance(child, (ttk.Scale, ttk.Button)):
+                child.configure(state=state)
+            elif isinstance(child, ttk.Combobox):
+                child.configure(state="readonly" if self.strip_supported
+                                else "disabled")
+        if not self.strip_supported:
+            self.strip_note.configure(
+                text="This keyboard has no second lighting zone.")
 
     # -- drawing -----------------------------------------------------------
 
@@ -986,6 +1099,54 @@ class App(tk.Tk):
         try:
             self.device.custom_save(LIGHTING_CHANNEL)
             self.status.set("Lighting saved to keyboard.")
+        except via_hid.DeviceError as exc:
+            self.status.set(f"Save failed: {exc}")
+
+    # -- corner LEDs (channel 2) -------------------------------------------
+
+    def on_strip_light(self, value_id, variable):
+        if not self.device or self._loading or not self.strip_supported:
+            return
+        try:
+            self.device.custom_set(STRIP_CHANNEL, value_id,
+                                   [int(variable.get()) & 0xFF])
+        except via_hid.DeviceError as exc:
+            self.status.set(f"Corner LED write failed: {exc}")
+
+    def on_strip_effect(self, _event=None):
+        if not self.device or self._loading or not self.strip_supported:
+            return
+        index = self.strip_effect.current()
+        if index < 0 or index >= len(STRIP_EFFECTS):
+            return
+        try:
+            self.device.custom_set(STRIP_CHANNEL, 2,
+                                   [STRIP_EFFECTS[index][1] & 0xFF])
+        except via_hid.DeviceError as exc:
+            self.status.set(f"Corner LED effect failed: {exc}")
+
+    def on_strip_colour(self):
+        if not self.device or self._loading or not self.strip_supported:
+            return
+        rgb, _hex = colorchooser.askcolor(title="Corner LED colour")
+        if not rgb:
+            return
+        r, g, b = (channel / 255.0 for channel in rgb)
+        hue, sat, _val = colorsys.rgb_to_hsv(r, g, b)
+        try:
+            self.device.custom_set(
+                STRIP_CHANNEL, 4,
+                [int(hue * 255) & 0xFF, int(sat * 255) & 0xFF],
+            )
+        except via_hid.DeviceError as exc:
+            self.status.set(f"Corner LED colour failed: {exc}")
+
+    def on_save_strip(self):
+        if not self.device or not self.strip_supported:
+            return
+        try:
+            self.device.custom_save(STRIP_CHANNEL)
+            self.status.set("Corner LEDs saved to keyboard.")
         except via_hid.DeviceError as exc:
             self.status.set(f"Save failed: {exc}")
 

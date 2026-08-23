@@ -279,6 +279,40 @@ The 30-second "revert to USB" timeout in `hs_rgb_blink_hook` is a red
 herring. It is only reachable via `lpwr_wakeup_hook`, which fires once per
 wake, so it never repeats often enough to elapse.
 
+## The corner LEDs (an undocumented second zone)
+
+The Split70 has a few LEDs at the top of each half that are not under any
+keycap. They ignore every control in the Lighting box and sit there cycling
+a rainbow forever. This is not a bug in this app - it took probing the
+hardware to find out why.
+
+**What the firmware says.** `keyboard.json` declares 77 RGB matrix LEDs for
+72 keys, split `[36, 41]` between the halves. Five of them have no real
+home: six entries claim matrix `[0, 0]` at coordinate `(0, 0)`, three at the
+head of each half's chain, and only one of those can be the actual key at
+row 0 column 0. Every gradient, cycle and spiral effect derives colour from
+an LED's x/y, so LEDs pinned to the origin just rotate hue forever no matter
+which effect you pick.
+
+**What actually drives them.** VIA's custom-value protocol has numbered
+channels, and channel 2 is `id_qmk_rgblight` - a second lighting zone,
+separate from the `id_qmk_rgb_matrix` zone on channel 3. The Split70's
+firmware implements channel 2, but Epomaker's definition JSON never declares
+it, so neither VIA nor the Epomaker Hub offers any control for it. Probing
+the device directly found it answering:
+
+    ch2 id2 (effect) = 14      <- an rgblight rainbow-swirl mode
+    ch2 id3 (speed)  = 0
+    ch2 id4 (colour) = hue 0, sat 255
+
+Setting `ch2 id2` to 0 turns them off. The **Corner LEDs** box in the app
+drives that channel - effect, brightness, speed and colour - and its own
+Save button commits it to EEPROM so it survives unplugging.
+
+The box greys itself out on a keyboard without that zone: an unsupported
+custom value reads back as `0xFF`, and every real rgblight mode is far below
+that, which tells the two apart.
+
 ## Layers: the Windows/Mac trap
 
 The Split70 has four layers, and they are **two pairs**, not four
