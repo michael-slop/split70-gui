@@ -717,15 +717,28 @@ class App(tk.Tk):
             self.device.close()
             self.device = None
         try:
-            found = via_hid.find_devices()
+            found, busy = via_hid.find_devices(include_busy=True)
         except via_hid.DeviceError as exc:
             self.status.set(f"Enumeration failed: {exc}")
             return
 
         if not found:
-            self.status.set(
-                "No VIA interface found - is the keyboard plugged in by USB?"
-            )
+            # Plenty of unrelated HID devices are held open by the system;
+            # only complain about a busy interface that is this keyboard.
+            wanted = self.definition.get("vendorId") if self.definition else None
+            wanted = int(wanted, 16) if isinstance(wanted, str) else wanted
+            busy = [b for b in busy
+                    if b[0] is not None and (wanted is None or b[0] == wanted)]
+            if busy:
+                self.status.set(
+                    "Keyboard is there but in use - close the other "
+                    "Split70 Configurator window, VIA, or the Epomaker Hub."
+                )
+            else:
+                self.status.set(
+                    "No VIA interface found - plug in by USB (VIA does not "
+                    "work over Bluetooth or the 2.4GHz dongle)."
+                )
             self.draw()
             return
 

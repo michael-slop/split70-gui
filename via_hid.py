@@ -10,6 +10,7 @@ hardcoded device path, so replugging into a different USB port is fine.
 """
 
 import ctypes
+import re
 from ctypes import wintypes
 
 # ---------------------------------------------------------------- constants
@@ -268,20 +269,48 @@ def _describe(handle):
         hid.HidD_FreePreparsedData(preparsed)
 
 
-def find_devices():
-    """List every VIA-capable HID interface as (vid, pid, path) tuples."""
-    found = []
+_PATH_IDS = re.compile(r"vid_([0-9a-f]{4})&pid_([0-9a-f]{4})", re.IGNORECASE)
+
+
+def _ids_from_path(path):
+    """(vid, pid) parsed out of a device path, or (None, None)."""
+    match = _PATH_IDS.search(path)
+    if not match:
+        return (None, None)
+    return (int(match.group(1), 16), int(match.group(2), 16))
+
+
+def find_devices(include_busy=False):
+    """List every VIA-capable HID interface as (vid, pid, path) tuples.
+
+    With include_busy, returns (found, busy) instead, where busy holds
+    (vid, pid, path) for interfaces that exist but are already held
+    exclusively by someone else. That distinction matters: an interface
+    another program has open looks exactly like an absent keyboard here,
+    because we cannot open it to ask what it is, and "no keyboard found" is
+    the wrong thing to tell the user when the keyboard is sitting right
+    there with VIA attached to it.
+
+    A busy interface cannot be queried, so its vid/pid are read out of the
+    device path instead - plenty of unrelated HID devices are held open by
+    the system, and the caller needs to tell them apart from the keyboard.
+    """
+    found, busy = [], []
     for path in _interface_paths():
         handle = _open(path)
         if handle == INVALID_HANDLE_VALUE:
-            continue  # busy or protected (plain keyboards are protected)
+            # ERROR_ACCESS_DENIED is normal: Windows protects the plain
+            # keyboard interfaces. A sharing violation is another program.
+            if ctypes.get_last_error() == ERROR_SHARING_VIOLATION:
+                busy.append(_ids_from_path(path) + (path,))
+            continue
         try:
             info = _describe(handle)
             if info and info[2] == VIA_USAGE_PAGE and info[3] == VIA_USAGE:
                 found.append((info[0], info[1], path))
         finally:
             kernel32.CloseHandle(handle)
-    return found
+    return (found, busy) if include_busy else found
 
 
 # ------------------------------------------------------------------ device
